@@ -1,0 +1,1734 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<!--
+  EduVault LMS - NOTICE BOARD section (student page)
+  ---------------------------------------------------------------------
+  Everything for this page is inside this one file:
+    1. <style>  : dashboard shell (sidebar, top bar, footer) + notice.css
+    2. <body>   : sidebar, top bar, page content, footer (HTML)
+    3. <script> : theme/sidebar script, notice-data.js, notice-notify.js, notice-board.js
+
+  Self-contained: no other .css / .js files are needed.
+  (Only Font Awesome icons load from the internet; images.jpg is optional.)
+  The admin side of this section is in admin-notices.html.
+  Both pages share the same fake data (localStorage), so a notice posted
+  on the admin page shows up here straight away.
+
+  Backend note: NoticeDB is a fake localStorage layer. Replace its functions
+  with real API calls. post / update / remove must be ADMIN-only on the server.
+-->
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EduVault | Notice Board</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+/* ==================================================================
+   DASHBOARD SHELL - sidebar, top bar, footer (same as the dashboard)
+   ================================================================== */
+:root {
+            --nsbm-green: #00a859;
+            --nsbm-navy: #0b1d3a;
+            --nsbm-green-hover: #008f4c;
+            
+            --primary-bg: #f4f7fe;
+            --sidebar-bg: #ffffff;
+            --card-bg: #ffffff;
+            --text-main: #2b3674;
+            --text-muted: #a3aed1;
+            --border-color: #e0e5f2;
+            --accent-color: #00a859;
+        }
+
+        [data-theme="dark"] {
+            --primary-bg: #0b1437;
+            --sidebar-bg: #111c44;
+            --card-bg: #111c44;
+            --text-main: #ffffff;
+            --text-muted: #8f9bba;
+            --border-color: #1b2559;
+            --nsbm-navy: #ffffff; 
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+        }
+
+        html, body {
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+            background-color: var(--primary-bg);
+            color: var(--text-main);
+        }
+
+        body, body.student-layout {
+            display: flex;
+        }
+
+        a { text-decoration: none; }
+        .edu-text { color: var(--nsbm-green); font-weight: 800; }
+        .vault-text { color: var(--nsbm-navy); font-weight: 800; }
+
+        .sidebar {
+            width: 240px;
+            height: 100vh;
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 15px 0;
+            flex-shrink: 0;
+            transition: margin-left 0.3s ease-in-out;
+            z-index: 10;
+            animation: sidebarLoad 0.7s ease-out both;
+        }
+
+        .sidebar.collapsed {
+            margin-left: -240px;
+        }
+
+        .logo-area {
+            text-align: center;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 10px;
+        }
+
+        .logo-area h2 { font-size: 22px; margin-bottom: 5px; }
+
+        .nav-menu {
+            list-style: none;
+            flex-grow: 1;
+        }
+
+        .nav-menu li, .bottom-menu li {
+            padding: 10px 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--text-muted);
+            font-size: 13px;
+            transition: 0.3s;
+            position: relative;
+            border-radius: 30px 0 0 30px;
+            margin-right: -1px;
+        }
+
+        .nav-menu li:hover:not(.active), .bottom-menu li:hover:not(.active) {
+            color: var(--accent-color);
+            transform: translateX(5px);
+        }
+
+        .nav-menu li.active, .bottom-menu li.active {
+            background-color: var(--primary-bg);
+            color: var(--accent-color);
+            font-weight: 600;
+            z-index: 2;
+        }
+
+        .nav-menu li.active::before, .nav-menu li.active::after {
+            content: ""; position: absolute; right: 0; width: 20px; height: 20px; background-color: transparent; pointer-events: none;
+        }
+        .nav-menu li.active::before { top: -20px; border-radius: 0 0 20px 0; box-shadow: 5px 5px 0 0 var(--primary-bg); }
+        .nav-menu li.active::after { bottom: -20px; border-radius: 0 20px 0 0; box-shadow: 5px -5px 0 0 var(--primary-bg); }
+
+        .bottom-menu {
+            list-style: none;
+            border-top: 1px solid var(--border-color);
+            padding-top: 8px;
+        }
+
+        #logout-btn { color: #ff6b6b; }
+        #logout-btn:hover { color: #cc0000; }
+        [data-theme="dark"] #logout-btn { color: #ff4d4d; }
+        [data-theme="dark"] #logout-btn:hover { color: #ff1a1a; }
+
+        .main-content {
+            flex-grow: 1;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            animation: mainContentLoad 0.7s ease-out backwards;
+            animation-delay: 0.1s;
+        }
+
+        .topbar {
+            height: 60px;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+            animation: topbarLoad 0.6s ease-out both;
+            animation-delay: 0.15s;
+        }
+
+        .topbar h2 { 
+            font-size: 18px; 
+            display: flex; 
+            align-items: center; 
+            gap: 10px; 
+            color: var(--text-main); 
+            flex: 1; 
+            white-space: nowrap;
+        }
+
+        .search-bar {
+            display: flex;
+            align-items: center;
+            background: var(--card-bg);
+            padding: 6px 15px;
+            border-radius: 20px;
+            width: 280px;
+            border: 1px solid var(--border-color);
+            transition: all 0.3s ease;
+            margin: 0 auto;
+        }
+
+        .search-bar:focus-within {
+            box-shadow: 0 4px 12px rgba(0, 168, 89, 0.15);
+            border-color: var(--accent-color);
+        }
+
+        .search-bar input {
+            border: none; outline: none; width: 100%; font-size: 12px; background: transparent; color: var(--text-main);
+        }
+
+        .top-icons { 
+            display: flex; 
+            align-items: center; 
+            gap: 15px; 
+            flex: 1; 
+            justify-content: flex-end; 
+        }
+
+        .icon-badge {
+            position: relative; cursor: pointer; color: var(--text-muted); transition: transform 0.2s ease, color 0.3s ease; font-size: 16px; background: transparent; border: none; display: flex; align-items: center; justify-content: center;
+        }
+        .icon-badge:hover { transform: scale(1.15); color: var(--accent-color); }
+        .badge { position: absolute; top: -5px; right: -5px; background: red; color: white; font-size: 9px; border-radius: 50%; padding: 1px 4px; }
+
+        .profile-short {
+            display: flex; align-items: center; gap: 8px; background: var(--card-bg); padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border-color); cursor: pointer; transition: all 0.3s ease;
+        }
+        .profile-short:hover { box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08); transform: translateY(-2px); border-color: var(--accent-color);}
+        .profile-short img { width: 25px; height: 25px; border-radius: 50%; object-fit: cover; }
+
+footer { flex-shrink: 0; text-align: center; padding: 8px; font-size: 11px; color: var(--text-muted); border-top: 1px solid var(--border-color); animation: footerLoad 0.6s ease-out both; animation-delay: 0.3s; }
+@keyframes mainContentLoad { 0% { opacity: 0; transform: translateY(30px); } 100% { opacity: 1; transform: translateY(0); } }
+@keyframes sidebarLoad { 0% { opacity: 0; transform: translateX(-50px); } 100% { opacity: 1; transform: translateX(0); } }
+@keyframes topbarLoad { 0% { opacity: 0; transform: translateY(-25px); } 100% { opacity: 1; transform: translateY(0); } }
+@keyframes footerLoad { 0% { opacity: 0; transform: translateY(20px); } 100% { opacity: 1; transform: translateY(0); } }
+
+@media (max-width: 992px) {
+    html, body { height: auto; overflow-y: auto; }
+    body { flex-direction: column; }
+    .sidebar { width: 100%; height: auto; }
+    .sidebar.collapsed { display: none; }
+    .main-content { height: auto; overflow-y: visible; }
+    .search-bar { width: 200px; }
+    .topbar { padding: 10px; }
+}
+
+/* ==================================================================
+   NOTICE BOARD + NOTIFICATION STYLES (was notice.css)
+   ================================================================== */
+/* =========================================================
+   EduVault Notice Board: student page, admin page,
+   notification bell, pop-up toasts and dashboard banner
+   ========================================================= */
+.nb-hidden { display: none !important; }
+
+/* Sidebar <a> links look like the rest of the student menu */
+.student-layout .nav-menu li a,
+.student-layout .bottom-menu li a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  color: inherit;
+}
+
+/* ---------- shared buttons ---------- */
+.nb-btn {
+  border: none;
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
+}
+.nb-btn.primary { background: var(--nsbm-green); color: #fff; }
+.nb-btn.primary:hover { background: var(--nsbm-green-hover); transform: translateY(-2px); box-shadow: 0 8px 18px rgba(0, 168, 89, 0.3); }
+.nb-btn.secondary { background: var(--primary-bg); color: var(--text-main); border: 1px solid var(--border-color); }
+.nb-btn.secondary:hover { border-color: var(--nsbm-green); color: var(--nsbm-green); }
+.nb-btn.danger { background: #e53935; color: #fff; }
+.nb-btn.danger:hover { background: #c62828; transform: translateY(-2px); }
+.nb-btn.light { background: #fff; color: var(--nsbm-green); box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18); padding: 12px 22px; font-size: 14px; }
+.nb-btn.light:hover { transform: translateY(-3px); }
+.nb-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+
+/* category pill (colored by --cat) */
+.nb-cat {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--cat, var(--nsbm-green));
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  padding: 5px 12px;
+  border-radius: 999px;
+}
+.nb-cat::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0.13;
+  z-index: -1;
+}
+
+/* =========================================================
+   STUDENT PAGE
+   ========================================================= */
+.nb-page {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 22px 28px;
+  color: var(--text-main);
+}
+
+.nb-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  padding: 26px 30px;
+  margin-bottom: 20px;
+  border-radius: 22px;
+  color: #fff;
+  background: linear-gradient(120deg, #0b1d3a 0%, #0f4c4a 48%, var(--nsbm-green) 100%);
+  box-shadow: 0 14px 30px rgba(0, 168, 89, 0.22);
+}
+.nb-hero::before {
+  content: '';
+  position: absolute;
+  width: 260px; height: 260px;
+  right: -70px; top: -110px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.10);
+}
+.nb-hero::after {
+  content: '';
+  position: absolute;
+  width: 150px; height: 150px;
+  right: 190px; bottom: -90px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+}
+.nb-hero > * { position: relative; z-index: 1; }
+.nb-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.18);
+  padding: 4px 12px;
+  border-radius: 999px;
+}
+.nb-hero-text h2 { font-size: 30px; font-weight: 800; margin: 8px 0 4px; color: #fff; }
+.nb-hero-text p { font-size: 13.5px; opacity: 0.92; max-width: 480px; }
+.nb-stats { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+.nb-stat {
+  background: rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(6px);
+  border-radius: 14px;
+  padding: 8px 18px;
+  min-width: 100px;
+  text-align: center;
+}
+.nb-stat strong { display: block; font-size: 20px; line-height: 1.2; }
+.nb-stat span { font-size: 11px; opacity: 0.9; }
+
+.nb-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.nb-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.nb-chip {
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-muted);
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.nb-chip i { color: var(--cat, var(--nsbm-green)); }
+.nb-chip:hover { border-color: var(--cat, var(--nsbm-green)); color: var(--text-main); }
+.nb-chip.active { background: var(--cat, var(--nsbm-green)); border-color: var(--cat, var(--nsbm-green)); color: #fff; }
+.nb-chip.active i { color: #fff; }
+.nb-chip .n { background: rgba(128, 128, 128, 0.18); border-radius: 999px; padding: 1px 8px; font-size: 11px; }
+.nb-chip.active .n { background: rgba(255, 255, 255, 0.25); }
+
+.nb-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.nb-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 9px 18px;
+  width: 250px;
+  color: var(--text-muted);
+}
+.nb-search:focus-within { border-color: var(--nsbm-green); box-shadow: 0 6px 16px rgba(0, 168, 89, 0.15); }
+.nb-search input { border: none; outline: none; background: transparent; width: 100%; font-size: 13px; color: var(--text-main); }
+.nb-toggle {
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-muted);
+  padding: 9px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.nb-toggle.on { background: var(--nsbm-green); border-color: var(--nsbm-green); color: #fff; }
+
+/* notice cards */
+.nb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 18px; }
+.nb-grid.no-anim .nb-card { animation: none; }
+
+.nb-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-top: 4px solid var(--cat);
+  border-radius: 18px;
+  padding: 16px 20px 14px;
+  cursor: pointer;
+  transition: transform 0.25s, box-shadow 0.25s, border-color 0.25s;
+  animation: nbIn 0.5s ease both;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+.nb-card:hover { transform: translateY(-5px); box-shadow: 0 16px 32px rgba(0, 0, 0, 0.12); border-color: var(--cat); }
+.nb-card:focus-visible { outline: 3px solid var(--cat); outline-offset: 2px; }
+.nb-card.unread { box-shadow: 0 10px 24px rgba(0, 0, 0, 0.07); }
+.nb-card-top { display: flex; align-items: center; justify-content: space-between; }
+.nb-new {
+  background: #e53935;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  animation: nbPulse 1.8s infinite;
+}
+.nb-title { font-size: 16.5px; font-weight: 800; line-height: 1.35; color: var(--text-main); }
+.nb-card:not(.unread) .nb-title { font-weight: 700; }
+.nb-preview {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.nb-attach {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  background: var(--primary-bg);
+  border: 1px solid var(--border-color);
+  padding: 6px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--text-main);
+}
+.nb-attach i { color: var(--cat); }
+.nb-attach span { color: var(--text-muted); }
+.nb-card-foot {
+  margin-top: auto;
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-color);
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.nb-card-foot i { margin-right: 4px; }
+.nb-exp.soon { color: #e53935; font-weight: 700; }
+
+.nb-empty { grid-column: 1 / -1; text-align: center; padding: 56px 16px; color: var(--text-muted); font-size: 13px; }
+.nb-empty-icon {
+  width: 84px; height: 84px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  color: var(--nsbm-green);
+  background: rgba(0, 168, 89, 0.1);
+}
+.nb-empty h4 { color: var(--text-main); font-size: 16px; margin-bottom: 4px; }
+
+/* detail modal */
+.nb-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 16, 40, 0.55);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 1000;
+  animation: nbFade 0.18s ease;
+}
+.nb-modal {
+  position: relative;
+  width: 660px;
+  max-width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--card-bg);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-top: 6px solid var(--cat, var(--nsbm-green));
+  border-radius: 22px;
+  padding: 26px 30px 28px;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.35);
+  animation: nbPop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.nb-close {
+  position: absolute;
+  top: 14px; right: 14px;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background: var(--primary-bg);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.nb-close:hover { color: #e53935; border-color: #e53935; }
+.nb-modal h2 { font-size: 23px; line-height: 1.3; margin: 12px 40px 10px 0; }
+.nb-modal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+.nb-modal-meta i { margin-right: 5px; }
+.nb-modal-meta .soon { color: #e53935; font-weight: 700; }
+.nb-modal-body { padding-top: 16px; font-size: 14.5px; line-height: 1.75; white-space: pre-wrap; word-wrap: break-word; }
+.nb-file-img { display: block; max-width: 100%; margin-top: 18px; border-radius: 14px; border: 1px solid var(--border-color); }
+.nb-file {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px dashed var(--border-color);
+  border-radius: 14px;
+  background: var(--primary-bg);
+}
+.nb-file .ico {
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  color: var(--cat, var(--nsbm-green));
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.nb-file .info { flex: 1; min-width: 0; }
+.nb-file .info strong { display: block; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nb-file .info small { color: var(--text-muted); font-size: 12px; }
+
+/* =========================================================
+   NOTIFICATIONS: bell dropdown, pop-up toasts, urgent banner
+   ========================================================= */
+.nt-ring { display: inline-block; transform-origin: 50% 0; animation: ntRing 1s ease; }
+
+.nt-panel {
+  position: fixed;
+  z-index: 1500;
+  background: var(--card-bg);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-radius: 18px;
+  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+  animation: nbPop 0.18s ease;
+}
+.nt-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--border-color); }
+.nt-head strong { display: block; font-size: 15px; }
+.nt-head span { font-size: 11.5px; color: var(--text-muted); }
+.nt-link { background: none; border: none; color: var(--nsbm-green); font-weight: 700; font-size: 12px; cursor: pointer; }
+.nt-link:disabled { opacity: 0.4; cursor: default; }
+.nt-list { max-height: 380px; overflow-y: auto; }
+.nt-item {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+  color: inherit;
+}
+.nt-item:hover { background: var(--primary-bg); }
+.nt-item.unread { background: rgba(0, 168, 89, 0.06); }
+.nt-ico {
+  position: relative;
+  isolation: isolate;
+  width: 38px; height: 38px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--cat, var(--nsbm-green));
+}
+.nt-ico::before { content: ''; position: absolute; inset: 0; border-radius: inherit; background: currentColor; opacity: 0.14; z-index: -1; }
+.nt-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.nt-title { display: block; font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nt-item:not(.unread) .nt-title { font-weight: 600; }
+.nt-snippet { display: block; font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nt-meta { font-size: 11px; color: var(--text-muted); }
+.nt-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--nsbm-green); margin-top: 6px; flex-shrink: 0; }
+.nt-foot { display: flex; justify-content: center; align-items: center; gap: 8px; padding: 12px; font-size: 13px; font-weight: 700; color: var(--nsbm-green); }
+.nt-foot:hover { background: var(--primary-bg); }
+.nt-empty { padding: 34px 16px; text-align: center; color: var(--text-muted); font-size: 13px; }
+.nt-empty i { display: block; font-size: 30px; color: var(--nsbm-green); margin-bottom: 8px; }
+
+.nt-toasts {
+  position: fixed;
+  right: 22px; bottom: 22px;
+  width: 370px;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 2500;
+}
+.nt-toast {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 40px 16px 14px;
+  background: var(--card-bg);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-left: 5px solid var(--cat, var(--nsbm-green));
+  border-radius: 16px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  animation: ntIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.nt-toast.urgent { background: linear-gradient(90deg, rgba(229, 57, 53, 0.12), transparent 65%), var(--card-bg); }
+.nt-toast.out { opacity: 0; transform: translateX(30px); transition: all 0.3s; }
+.nt-label { display: block; font-size: 10.5px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase; color: var(--cat); }
+.nt-toast .nt-title { white-space: normal; font-size: 13.5px; }
+.nt-x { position: absolute; top: 8px; right: 10px; border: none; background: transparent; color: var(--text-muted); font-size: 20px; line-height: 1; cursor: pointer; }
+.nt-x:hover { color: #e53935; }
+.nt-bar { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: var(--cat); transform-origin: left; animation: ntBar linear forwards; }
+.nt-toast:hover .nt-bar { animation-play-state: paused; }
+
+/* urgent banner on the dashboard */
+#urgentBanner { flex-shrink: 0; }
+#urgentBanner:not(:empty) ~ .dashboard-grid { height: auto; flex: 1; min-height: 0; }
+.ub {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 20px 10px;
+  padding: 10px 16px;
+  border-radius: 14px;
+  color: #fff;
+  background: linear-gradient(90deg, #e53935, #ff7043);
+  box-shadow: 0 10px 24px rgba(229, 57, 53, 0.35);
+  animation: ubIn 0.5s ease;
+}
+.ub-ico {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  animation: ubPulse 1.6s infinite;
+}
+.ub-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ub-text strong { font-size: 10.5px; letter-spacing: 0.5px; text-transform: uppercase; opacity: 0.9; }
+.ub-text span { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ub-time { font-size: 11.5px; opacity: 0.9; white-space: nowrap; }
+.ub-btn { background: #fff; color: #e53935; font-weight: 800; font-size: 12.5px; padding: 8px 16px; border-radius: 999px; white-space: nowrap; }
+.ub-x { width: 30px; height: 30px; border: none; border-radius: 50%; background: rgba(255, 255, 255, 0.2); color: #fff; cursor: pointer; flex-shrink: 0; }
+.ub-x:hover { background: rgba(255, 255, 255, 0.35); }
+    </style>
+</head>
+<body class="student-layout">
+
+    <!-- ================= SIDEBAR (same as other student pages) ================= -->
+    <aside class="sidebar">
+        <div class="logo-area">
+            <div style="font-size: 42px; color: #7b52ff; margin: 15px auto; text-align: center;">
+                <i class="fa-solid fa-graduation-cap"></i>
+            </div>
+            <h2><span class="edu-text">Edu</span><span class="vault-text">Vault</span></h2>
+            <p style="font-size: 10px; color: var(--text-muted);">NSBM Student Hub</p>
+        </div>
+
+        <ul class="nav-menu">
+            <li onclick="window.location.href='studentdashboard.html'"><i class="fas fa-home"></i> Dashboard</li>
+            <li onclick="window.location.href='profile.html'"><i class="far fa-user"></i> My Profile</li>
+            <li onclick="window.location.href='youruploads.html'"><i class="fas fa-cloud-upload-alt"></i> Your Uploads</li>
+            <li onclick="window.location.href='study material.html'"><i class="fas fa-book"></i> Study Material</li>
+            <li onclick="window.location.href='groups.html'"><i class="fas fa-users"></i> Groups</li>
+            <li class="active" onclick="window.location.href='notice-board.html'"><i class="fas fa-clipboard-list"></i> Notice board</li>
+        </ul>
+
+        <ul class="bottom-menu">
+            <li onclick="window.location.href='feedback_2.html'"><i class="far fa-comment-dots"></i> Feedback</li>
+            <a href="logout.php" style="text-decoration: none; color: inherit; width: 100%; display: block;">
+                <li id="logout-btn"><i class="fas fa-sign-out-alt"></i> Logout</li>
+            </a>
+        </ul>
+    </aside>
+
+    <!-- ================= MAIN CONTENT ================= -->
+    <main class="main-content">
+
+        <!-- TOP BAR (same as other student pages) -->
+        <header class="topbar">
+            <h2>
+                <i class="fas fa-bars" id="menu-toggle" style="margin-right: 10px; color: var(--text-muted); cursor: pointer;"></i>
+                Notice Board
+            </h2>
+
+            <div class="search-bar">
+                <input type="text" placeholder="Search here...">
+                <i class="fas fa-search" style="color: var(--text-muted); font-size: 12px;"></i>
+            </div>
+
+            <div class="top-icons">
+                <div class="icon-badge"><i class="far fa-bell"></i><span class="badge">3</span></div>
+                <div class="icon-badge"><i class="far fa-envelope"></i><span class="badge">3</span></div>
+
+                <button id="theme-toggle" class="icon-badge theme-btn" title="Toggle Dark/Light Mode">
+                    <i class="fa-solid fa-moon"></i>
+                </button>
+
+                <div class="profile-short" onclick="window.location.href='profile.html'" style="text-decoration: none; color: inherit;">
+                    <img src="images.jpg" alt="User" onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=User&background=00a859&color=fff'">
+                    <div style="font-size: 10px;">
+                        <strong>Hi, Student</strong><br>
+                        <span style="color: var(--text-muted);">Student</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- ================= NOTICE BOARD CONTENT ================= -->
+        <section class="nb-page">
+
+            <!-- Hero -->
+            <div class="nb-hero">
+                <div class="nb-hero-text">
+                    <span class="nb-kicker"><i class="fas fa-bullhorn"></i> Official announcements</span>
+                    <h2>Notice Board</h2>
+                    <p>Stay up to date with exams, events and important news from the NSBM administration.</p>
+                    <div class="nb-stats">
+                        <div class="nb-stat"><strong id="statActive">0</strong><span>Active notices</span></div>
+                        <div class="nb-stat"><strong id="statUnread">0</strong><span>Unread</span></div>
+                        <div class="nb-stat"><strong id="statUrgent">0</strong><span>Urgent</span></div>
+                    </div>
+                </div>
+                <button class="nb-btn light" id="nbMarkAll"><i class="fas fa-check-double"></i> Mark all as read</button>
+            </div>
+
+            <!-- Filters -->
+            <div class="nb-toolbar">
+                <div class="nb-chips" id="nbChips"></div>
+                <div class="nb-tools">
+                    <div class="nb-search">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="nbSearch" placeholder="Search notices...">
+                    </div>
+                    <button class="nb-toggle" id="nbUnreadOnly"><i class="fas fa-envelope-open-text"></i> Unread only</button>
+                </div>
+            </div>
+
+            <!-- Notices -->
+            <div class="nb-grid" id="nbGrid"></div>
+
+        </section>
+        <footer>
+            <p>&copy; 2026 EduVault — Student Community Platform | NSBM Green University</p>
+        </footer>
+    </main>
+
+    <!-- ================= NOTICE DETAIL MODAL ================= -->
+    <div class="nb-overlay nb-hidden" id="noticeModal">
+        <div class="nb-modal" id="nbModalCard" role="dialog" aria-modal="true">
+            <button class="nb-close" id="mClose" aria-label="Close"><i class="fas fa-xmark"></i></button>
+            <span class="nb-cat" id="mCat"></span>
+            <h2 id="mTitle"></h2>
+            <div class="nb-modal-meta" id="mMeta"></div>
+            <div class="nb-modal-body" id="mBody"></div>
+            <div id="mAttach"></div>
+        </div>
+    </div>
+
+    <!-- ================= SCRIPTS ================= -->
+    <script>
+// ==================================================================
+// PAGE BASICS - dark/light theme + sidebar toggle
+// ==================================================================
+/* ---------- Page basics: dark/light theme + sidebar toggle ---------- */
+(function () {
+  const root = document.documentElement;
+  const btn = document.getElementById('theme-toggle');
+  const KEY = 'eduvault_theme';
+  function apply(t) {
+    root.setAttribute('data-theme', t);
+    if (btn) btn.innerHTML = t === 'dark' ? '<i class="fa-solid fa-sun"></i>' : '<i class="fa-solid fa-moon"></i>';
+  }
+  let saved = 'light';
+  try { saved = localStorage.getItem(KEY) || 'light'; } catch (e) {}
+  apply(saved);
+  if (btn) btn.addEventListener('click', () => {
+    const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    apply(next);
+    try { localStorage.setItem(KEY, next); } catch (e) {}
+  });
+
+  const menu = document.getElementById('menu-toggle');
+  const sidebar = document.querySelector('.sidebar');
+  if (menu && sidebar) menu.addEventListener('click', () =>
+    sidebar.classList.toggle('collapsed'));
+})();
+    </script>
+
+    <script>
+// ==================================================================
+// NOTICE DATA + UI HELPERS (was notice-data.js)
+// ==================================================================
+// ======================================================================
+//  EduVault Notice Board: fake data layer + small UI helpers (demo only)
+//  Used by: notice-board.html (students), admin-notices.html (admin) and
+//  every student page that shows the notification bell.
+//
+//  Backend teammates: replace the NoticeDB functions with real API calls.
+//  IMPORTANT: post / update / remove must be allowed for ADMIN accounts only
+//  (require_login('admin') on the server). Hiding buttons is not security.
+// ======================================================================
+const NoticeDB = (() => {
+  const KEYS = {
+    notices: 'eduvault_notices_v1',
+    read: 'eduvault_notices_read_v1',
+    toasted: 'eduvault_notices_toasted_v1',
+    banner: 'eduvault_notices_banner_v1'
+  };
+
+  const CATEGORIES = {
+    exam:    { label: 'Exam',    icon: 'fa-file-pen',             color: '#6366f1' },
+    event:   { label: 'Event',   icon: 'fa-calendar-day',         color: '#0ea5e9' },
+    general: { label: 'General', icon: 'fa-circle-info',          color: '#00a859' },
+    urgent:  { label: 'Urgent',  icon: 'fa-triangle-exclamation', color: '#e53935' }
+  };
+
+  let adminMode = false;   // only the admin page switches this on
+
+  const pad = n => String(n).padStart(2, '0');
+  const minsAgo = m => new Date(Date.now() - m * 60000).toISOString();
+  const dayStr = off => {
+    const d = new Date();
+    d.setDate(d.getDate() + off);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
+
+  function seed() {
+    return {
+      nextId: 6,
+      notices: [
+        {
+          id: 1, category: 'urgent', author: 'Admin', editedAt: null, attachment: null,
+          title: 'Campus closed tomorrow due to heavy rain',
+          message: 'All lectures and labs scheduled for tomorrow are cancelled because of the heavy rain warning issued for the area.\n\nThe campus will stay closed for the day. Online resources remain available on EduVault. Please stay safe and watch the official NSBM pages for updates about the day after.',
+          createdAt: minsAgo(40), expiresAt: dayStr(2)
+        },
+        {
+          id: 2, category: 'exam', author: 'Admin', editedAt: null,
+          attachment: { name: 'Final_Exam_Timetable.pdf', size: 482113, type: 'application/pdf', dataUrl: null },
+          title: 'Semester 1 final exam timetable released',
+          message: 'The Semester 1 final examination timetable is now available. Please download the attached PDF and check your exam dates, venues and reporting times.\n\nStudents with clashes must contact the Examination Unit by Friday. Admission cards will be issued one week before the first paper.',
+          createdAt: minsAgo(300), expiresAt: dayStr(20)
+        },
+        {
+          id: 3, category: 'event', author: 'Admin', editedAt: null, attachment: null,
+          title: 'Inter-Faculty Hackathon: registration open',
+          message: 'Registration is now open for the Inter-Faculty Hackathon. Form teams of 3 to 5 students and register through the Computing Faculty office.\n\nThe event runs for 24 hours with prizes for the top three teams. Industry mentors will be available throughout.',
+          createdAt: minsAgo(1500), expiresAt: dayStr(10)
+        },
+        {
+          id: 4, category: 'general', author: 'Admin', editedAt: null, attachment: null,
+          title: 'Library hours extended during exam season',
+          message: 'To support exam preparation, the main library will stay open until 10.00 PM from Monday to Saturday.\n\nPlease carry your student ID card when entering the library.',
+          createdAt: minsAgo(4300), expiresAt: null
+        },
+        {
+          id: 5, category: 'general', author: 'Admin', editedAt: null, attachment: null,
+          title: 'Last date for course registration',
+          message: 'The last date to complete course registration for the new semester is approaching. Late registrations will not be accepted.',
+          createdAt: minsAgo(17000), expiresAt: dayStr(-3)
+        }
+      ]
+    };
+  }
+
+  /* ---------- storage ---------- */
+  function load() {
+    try {
+      const raw = localStorage.getItem(KEYS.notices);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    const s = seed();
+    save(s);
+    return s;
+  }
+  function save(d) {
+    try { localStorage.setItem(KEYS.notices, JSON.stringify(d)); return true; }
+    catch (e) { return false; }
+  }
+  function getArr(k) {
+    try { return JSON.parse(localStorage.getItem(k)) || []; } catch (e) { return []; }
+  }
+  function setArr(k, a) {
+    try { localStorage.setItem(k, JSON.stringify(a)); } catch (e) {}
+  }
+  const changed = () => window.dispatchEvent(new CustomEvent('notices:changed'));
+  const ok = extra => Object.assign({ ok: true }, extra);
+  const fail = error => ({ ok: false, error });
+
+  /* ---------- reading ---------- */
+  function isExpired(n) {
+    if (!n.expiresAt) return false;
+    return Date.now() > new Date(n.expiresAt + 'T23:59:59').getTime();   // valid until the end of that day
+  }
+  const getAll = () => load().notices.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const getActive = () => getAll().filter(n => !isExpired(n));
+  const get = id => load().notices.find(n => n.id === Number(id)) || null;
+
+  /* ---------- admin actions ---------- */
+  function validate(data) {
+    const title = String(data.title || '').trim();
+    const message = String(data.message || '').trim();
+    if (!title || title.length > 120) return 'Title must be 1 to 120 characters.';
+    if (!message || message.length > 1500) return 'Message must be 1 to 1500 characters.';
+    return null;
+  }
+
+  function post(data) {
+    if (!adminMode) return fail('Only admins can post notices.');
+    const err = validate(data);
+    if (err) return fail(err);
+    const d = load();
+    const n = {
+      id: d.nextId++,
+      title: data.title.trim(),
+      message: data.message.trim(),
+      category: CATEGORIES[data.category] ? data.category : 'general',
+      createdAt: new Date().toISOString(),      // posted date + time are added automatically
+      expiresAt: data.expiresAt || null,
+      attachment: data.attachment || null,
+      author: 'Admin',
+      editedAt: null
+    };
+    d.notices.push(n);
+    if (!save(d)) return fail('Browser storage is full. Try a smaller attachment.');
+    changed();
+    return ok({ notice: n });
+  }
+
+  function update(id, data) {
+    if (!adminMode) return fail('Only admins can edit notices.');
+    const err = validate(data);
+    if (err) return fail(err);
+    const d = load();
+    const n = d.notices.find(x => x.id === Number(id));
+    if (!n) return fail('Notice not found.');
+    n.title = data.title.trim();
+    n.message = data.message.trim();
+    n.category = CATEGORIES[data.category] ? data.category : n.category;
+    n.expiresAt = data.expiresAt || null;
+    n.attachment = data.attachment || null;
+    n.editedAt = new Date().toISOString();       // createdAt never changes
+    if (!save(d)) return fail('Browser storage is full. Try a smaller attachment.');
+    changed();
+    return ok({ notice: n });
+  }
+
+  function remove(id) {
+    if (!adminMode) return fail('Only admins can delete notices.');
+    const d = load();
+    if (!d.notices.some(x => x.id === Number(id))) return fail('Notice not found.');
+    d.notices = d.notices.filter(x => x.id !== Number(id));
+    save(d);
+    changed();
+    return ok();
+  }
+
+  /* ---------- per-student state (read, pop-up shown, banner dismissed) ---------- */
+  const isRead = id => getArr(KEYS.read).includes(Number(id));
+  function markRead(id, silent) {
+    const a = getArr(KEYS.read);
+    if (a.includes(Number(id))) return;
+    a.push(Number(id));
+    setArr(KEYS.read, a);
+    if (!silent) changed();
+  }
+  function markAllRead() {
+    const merged = Array.from(new Set(getArr(KEYS.read).concat(getActive().map(n => n.id))));
+    setArr(KEYS.read, merged);
+    changed();
+  }
+  const unreadCount = () => getActive().filter(n => !isRead(n.id)).length;
+
+  const wasToasted = id => getArr(KEYS.toasted).includes(Number(id));
+  function markToasted(ids) {
+    setArr(KEYS.toasted, Array.from(new Set(getArr(KEYS.toasted).concat(ids.map(Number)))));
+  }
+
+  const isBannerDismissed = id => getArr(KEYS.banner).includes(Number(id));
+  function dismissBanner(id) {
+    setArr(KEYS.banner, Array.from(new Set(getArr(KEYS.banner).concat([Number(id)]))));
+  }
+
+  /* ---------- formatting ---------- */
+  const fmt = {
+    date(iso) { return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); },
+    time(iso) { return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); },
+    dateTime(iso) { return fmt.date(iso) + ' · ' + fmt.time(iso); },
+    timeAgo(iso) {
+      const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+      if (s < 60) return 'just now';
+      const m = Math.floor(s / 60);
+      if (m < 60) return m + ' min ago';
+      const h = Math.floor(m / 60);
+      if (h < 24) return h + (h === 1 ? ' hour ago' : ' hours ago');
+      const d = Math.floor(h / 24);
+      if (d < 7) return d + (d === 1 ? ' day ago' : ' days ago');
+      return fmt.date(iso);
+    },
+    size(b) {
+      b = Number(b) || 0;
+      if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
+      if (b >= 1024) return Math.round(b / 1024) + ' KB';
+      return b + ' B';
+    },
+    snippet(text, len = 90) {
+      const t = String(text || '').replace(/\s+/g, ' ').trim();
+      return t.length > len ? t.slice(0, len - 1) + '…' : t;
+    },
+    expiryInfo(n) {
+      if (!n.expiresAt) return { text: 'No expiry', soon: false, expired: false };
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const diff = Math.round((new Date(n.expiresAt + 'T00:00:00') - today) / 86400000);
+      const label = fmt.date(n.expiresAt + 'T00:00:00');
+      if (diff < 0) return { text: 'Expired ' + label, soon: false, expired: true };
+      if (diff === 0) return { text: 'Expires today', soon: true, expired: false };
+      if (diff === 1) return { text: 'Expires tomorrow', soon: true, expired: false };
+      if (diff <= 3) return { text: 'Expires in ' + diff + ' days', soon: true, expired: false };
+      return { text: 'Valid till ' + label, soon: false, expired: false };
+    }
+  };
+
+  /* ---------- change listener (same tab + other tabs) ---------- */
+  function onChange(cb) {
+    window.addEventListener('notices:changed', cb);
+    window.addEventListener('storage', e => {
+      if (Object.values(KEYS).includes(e.key)) cb(e);
+    });
+  }
+
+  return {
+    KEYS, CATEGORIES, fmt,
+    enableAdmin() { adminMode = true; },
+    isExpired, getAll, getActive, get,
+    post, update, remove,
+    isRead, markRead, markAllRead, unreadCount,
+    wasToasted, markToasted, isBannerDismissed, dismissBanner,
+    onChange
+  };
+})();
+
+// ----------------------------------------------------------------------
+//  Small UI helpers: escaping, toast cards, confirm dialog
+// ----------------------------------------------------------------------
+const NoticeUI = (() => {
+  function esc(str) {
+    const d = document.createElement('div');
+    d.textContent = str ?? '';
+    return d.innerHTML;
+  }
+
+  function box() {
+    let b = document.querySelector('.nt-toasts');
+    if (!b) {
+      b = document.createElement('div');
+      b.className = 'nt-toasts';
+      document.body.appendChild(b);
+    }
+    return b;
+  }
+
+  // Pop-up card. o = { label, title, text, icon, color, urgent, duration, href, onClick }
+  function card(o) {
+    const dur = o.duration || 8000;
+    const el = document.createElement('div');
+    el.className = 'nt-toast' + (o.urgent ? ' urgent' : '');
+    el.style.setProperty('--cat', o.color || '#00a859');
+    el.innerHTML = `
+      <span class="nt-ico"><i class="fas ${o.icon || 'fa-bell'}"></i></span>
+      <span class="nt-body"><span class="nt-label"></span><span class="nt-title"></span><span class="nt-snippet"></span></span>
+      <button class="nt-x" aria-label="Close">&times;</button>
+      <i class="nt-bar" style="animation-duration:${dur}ms"></i>`;
+
+    const fill = (sel, val) => {
+      const n = el.querySelector(sel);
+      if (val) n.textContent = val; else n.remove();
+    };
+    fill('.nt-label', o.label);
+    fill('.nt-title', o.title);
+    fill('.nt-snippet', o.text);
+
+    let timer = setTimeout(close, dur);
+    function close() {
+      clearTimeout(timer);
+      el.classList.add('out');
+      setTimeout(() => el.remove(), 300);
+    }
+    el.addEventListener('mouseenter', () => clearTimeout(timer));
+    el.addEventListener('mouseleave', () => { timer = setTimeout(close, 2500); });
+    el.addEventListener('click', e => {
+      if (e.target.closest('.nt-x')) { close(); return; }
+      if (o.onClick) o.onClick();
+      if (o.href) window.location.href = o.href;
+    });
+
+    box().appendChild(el);
+    return el;
+  }
+
+  // Simple message toast. type: 'success' | 'error' | 'info'
+  function toast(message, type = 'success') {
+    const map = {
+      success: ['fa-circle-check', '#00a859'],
+      error: ['fa-circle-exclamation', '#e53935'],
+      info: ['fa-circle-info', '#0ea5e9']
+    };
+    const [icon, color] = map[type] || map.success;
+    return card({ title: message, icon, color, duration: 3800 });
+  }
+
+  // Confirm dialog -> Promise<boolean>
+  function confirm(o) {
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.className = 'nb-overlay';
+      overlay.innerHTML = `
+        <div class="nb-dialog" role="dialog" aria-modal="true">
+          <div class="nb-dialog-ico"><i class="fas ${o.icon || 'fa-trash'}"></i></div>
+          <h3></h3><p></p>
+          <div class="nb-dialog-actions">
+            <button class="nb-btn secondary" data-a="no"></button>
+            <button class="nb-btn danger" data-a="yes"></button>
+          </div>
+        </div>`;
+      overlay.querySelector('h3').textContent = o.title || 'Are you sure?';
+      overlay.querySelector('p').textContent = o.message || '';
+      overlay.querySelector('[data-a="no"]').textContent = o.cancelText || 'Cancel';
+      overlay.querySelector('[data-a="yes"]').textContent = o.confirmText || 'Confirm';
+
+      function done(v) {
+        document.removeEventListener('keydown', onKey);
+        overlay.remove();
+        resolve(v);
+      }
+      function onKey(e) { if (e.key === 'Escape') done(false); }
+      overlay.addEventListener('click', e => {
+        if (e.target === overlay) done(false);
+        const b = e.target.closest('[data-a]');
+        if (b) done(b.dataset.a === 'yes');
+      });
+      document.addEventListener('keydown', onKey);
+      document.body.appendChild(overlay);
+      overlay.querySelector('[data-a="yes"]').focus();
+    });
+  }
+
+  return { esc, card, toast, confirm };
+})();
+    </script>
+
+    <script>
+// ==================================================================
+// NOTIFICATION BELL + POP-UPS (was notice-notify.js)
+// ==================================================================
+// ======================================================================
+//  Notification bell + pop-ups + urgent dashboard banner (student pages)
+//  Shows NOTICES and, when session-data.js is on the page, STUDY SESSION alerts.
+//  Needs: notice-data.js and notice.css.
+//  Optional (for session alerts): mock-data.js and session-data.js, loaded BEFORE this file.
+//  It finds your existing bell icon, so the top bar markup stays unchanged.
+// ======================================================================
+(function () {
+  if (typeof NoticeDB === 'undefined' || typeof NoticeUI === 'undefined') return;
+
+  const HAS_SESSIONS = typeof SessionAlerts !== 'undefined';
+  const BOARD = 'notice-board.html';
+  const SESSIONS_URL = 'groups.html?tab=sessions';
+  const CAT = NoticeDB.CATEGORIES;
+  const esc = NoticeUI.esc;
+  const fmt = NoticeDB.fmt;
+
+  /* ---------- one combined feed (notices + session alerts) ---------- */
+  function noticeItem(n) {
+    const c = CAT[n.category] || CAT.general;
+    return {
+      source: 'notice', id: n.id, atMs: new Date(n.createdAt).getTime(),
+      title: n.title, text: fmt.snippet(n.message, 70), meta: c.label,
+      icon: c.icon, color: c.color, unread: !NoticeDB.isRead(n.id),
+      href: BOARD + '?open=' + n.id
+    };
+  }
+  function feed() {
+    let items = NoticeDB.getActive().map(noticeItem);
+    if (HAS_SESSIONS) items = items.concat(SessionAlerts.feed());
+    return items.sort((a, b) => b.atMs - a.atMs);
+  }
+  const unreadTotal = () => NoticeDB.unreadCount() + (HAS_SESSIONS ? SessionAlerts.unreadCount() : 0);
+
+  /* ---------- bell + badge ---------- */
+  const bellIcon = document.querySelector('.icon-badge .fa-bell');
+  const bellWrap = bellIcon ? bellIcon.closest('.icon-badge') : null;
+  let badge = bellWrap ? bellWrap.querySelector('.badge') : null;
+  if (bellWrap && !badge) {
+    badge = document.createElement('span');
+    badge.className = 'badge';
+    bellWrap.appendChild(badge);
+  }
+
+  const panel = document.createElement('div');
+  panel.className = 'nt-panel nb-hidden';
+  document.body.appendChild(panel);
+  let open = false;
+
+  function updateBadge() {
+    if (!badge) return;
+    const n = unreadTotal();
+    badge.textContent = n > 99 ? '99+' : n;
+    badge.style.display = n ? '' : 'none';
+  }
+
+  function ring() {
+    if (!bellIcon) return;
+    bellIcon.classList.remove('nt-ring');
+    void bellIcon.offsetWidth;
+    bellIcon.classList.add('nt-ring');
+  }
+
+  function itemHTML(it) {
+    return `
+      <a class="nt-item ${it.unread ? 'unread' : ''}" href="${esc(it.href)}" data-src="${it.source}" data-id="${it.id}" style="--cat:${it.color}">
+        <span class="nt-ico"><i class="fas ${it.icon}"></i></span>
+        <span class="nt-body">
+          <span class="nt-title">${esc(it.title)}</span>
+          <span class="nt-snippet">${esc(it.text)}</span>
+          <span class="nt-meta">${esc(it.meta)} · ${fmt.timeAgo(new Date(it.atMs).toISOString())}</span>
+        </span>
+        ${it.unread ? '<i class="nt-dot"></i>' : ''}
+      </a>`;
+  }
+
+  function renderPanel() {
+    const list = feed().slice(0, 8);
+    const unread = unreadTotal();
+    panel.innerHTML = `
+      <div class="nt-head">
+        <div><strong>Notifications</strong><span>${unread ? unread + ' unread' : 'You are all caught up'}</span></div>
+        <button class="nt-link" data-nt="readall" ${unread ? '' : 'disabled'}>Mark all as read</button>
+      </div>
+      <div class="nt-list">
+        ${list.length ? list.map(itemHTML).join('') : '<div class="nt-empty"><i class="fas fa-bell-slash"></i>Nothing new right now</div>'}
+      </div>
+      <div style="display:flex;">
+        <a class="nt-foot" style="flex:1;" href="${BOARD}">All notices <i class="fas fa-arrow-right"></i></a>
+        ${HAS_SESSIONS ? `<a class="nt-foot" style="flex:1;" href="${SESSIONS_URL}">Study sessions <i class="fas fa-arrow-right"></i></a>` : ''}
+      </div>`;
+  }
+
+  function place() {
+    if (!bellWrap) return;
+    const r = bellWrap.getBoundingClientRect();
+    const w = Math.min(380, window.innerWidth - 24);
+    let left = r.right - w + 40;
+    left = Math.max(12, Math.min(left, window.innerWidth - w - 12));
+    panel.style.width = w + 'px';
+    panel.style.left = left + 'px';
+    panel.style.top = (r.bottom + 12) + 'px';
+  }
+
+  function togglePanel(force) {
+    open = typeof force === 'boolean' ? force : !open;
+    panel.classList.toggle('nb-hidden', !open);
+    if (open) { renderPanel(); place(); }
+  }
+
+  if (bellWrap) bellWrap.addEventListener('click', e => { e.stopPropagation(); togglePanel(); });
+  panel.addEventListener('click', e => {
+    e.stopPropagation();
+    const item = e.target.closest('.nt-item');
+    if (item) {                                            // the link then opens the notice / session
+      const id = Number(item.dataset.id);
+      if (item.dataset.src === 'session') SessionAlerts.markRead(id, true);
+      else NoticeDB.markRead(id, true);
+      return;
+    }
+    if (e.target.closest('[data-nt="readall"]')) {
+      NoticeDB.markAllRead();
+      if (HAS_SESSIONS) SessionAlerts.markAllRead();
+    }
+  });
+  document.addEventListener('click', () => { if (open) togglePanel(false); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && open) togglePanel(false); });
+  window.addEventListener('resize', () => { if (open) place(); });
+
+  /* ---------- pop-ups: notices ---------- */
+  function noticeToast(n) {
+    const c = CAT[n.category] || CAT.general;
+    const urgent = n.category === 'urgent';
+    NoticeUI.card({
+      label: urgent ? 'Urgent notice' : 'New ' + c.label.toLowerCase() + ' notice',
+      title: n.title,
+      text: fmt.snippet(n.message, 80),
+      icon: c.icon,
+      color: c.color,
+      urgent: urgent,
+      duration: urgent ? 12000 : 8000,
+      onClick: () => NoticeDB.markRead(n.id, true),
+      href: BOARD + '?open=' + n.id
+    });
+    ring();
+  }
+
+  function toastOnLoad() {
+    const fresh = NoticeDB.getActive().filter(n => !NoticeDB.isRead(n.id) && !NoticeDB.wasToasted(n.id));
+    if (!fresh.length) return;
+    NoticeDB.markToasted(fresh.map(n => n.id));
+    if (fresh.length === 1) { noticeToast(fresh[0]); return; }
+    const urgent = fresh.find(n => n.category === 'urgent');
+    NoticeUI.card({
+      label: urgent ? 'Urgent notice' : 'New notices',
+      title: 'You have ' + fresh.length + ' new notices',
+      text: (urgent || fresh[0]).title,
+      icon: urgent ? 'fa-triangle-exclamation' : 'fa-bell',
+      color: urgent ? '#e53935' : '#00a859',
+      urgent: !!urgent,
+      duration: 9000,
+      href: BOARD
+    });
+    ring();
+  }
+
+  /* ---------- pop-ups: study session alerts ---------- */
+  function sessionToast(it) {
+    const el = NoticeUI.card({
+      label: it.label,
+      title: it.title,
+      text: it.text,
+      icon: it.icon,
+      color: it.color,
+      urgent: it.type === 'cancel',
+      duration: it.type === 'starting' ? 15000 : 9000,
+      onClick: () => SessionAlerts.markRead(it.id, true),
+      href: it.href
+    });
+    if (it.type === 'starting' && it.joinUrl) {             // "Starting now" gets a Join button
+      const join = document.createElement('a');
+      join.className = 'nb-btn primary';
+      join.href = it.joinUrl;
+      join.target = '_blank';
+      join.rel = 'noopener noreferrer';
+      join.style.cssText = 'margin-top:8px;padding:6px 14px;font-size:12px;align-self:flex-start;';
+      join.innerHTML = '<i class="fas fa-video"></i> Join now';
+      join.addEventListener('click', e => { e.stopPropagation(); SessionAlerts.markRead(it.id, true); });
+      el.querySelector('.nt-body').appendChild(join);
+    }
+    ring();
+  }
+
+  // alerts that were just created (reminders, new sessions from other tabs, ...)
+  function handleNewSessionAlerts(ids) {
+    if (!HAS_SESSIONS || !ids.length) return;
+    const items = SessionAlerts.itemsByIds(ids).filter(it => it.toastable && !SessionAlerts.wasToasted(it.id));
+    if (!items.length) return;
+    SessionAlerts.markToasted(items.map(it => it.id));
+    items.slice(0, 3).forEach((it, i) => setTimeout(() => sessionToast(it), i * 600));
+  }
+
+  function sessionToastOnLoad() {
+    if (!HAS_SESSIONS) return;
+    const fresh = SessionAlerts.freshForToast();
+    if (!fresh.length) return;
+    SessionAlerts.markToasted(fresh.map(it => it.id));
+    if (fresh.length === 1) { sessionToast(fresh[0]); return; }
+    const hot = fresh.find(it => it.type === 'starting' || it.type === 'cancel') || fresh[0];
+    NoticeUI.card({
+      label: 'Study sessions',
+      title: 'You have ' + fresh.length + ' session updates',
+      text: hot.title + ' · ' + hot.meta,
+      icon: 'fa-calendar-days',
+      color: '#00a859',
+      duration: 9000,
+      href: SESSIONS_URL
+    });
+    ring();
+  }
+
+  /* ---------- live updates (this tab + other tabs) ---------- */
+  window.addEventListener('session-alerts:new', e => handleNewSessionAlerts((e.detail && e.detail.ids) || []));
+
+  window.addEventListener('storage', e => {
+    if (e.key === NoticeDB.KEYS.notices && e.newValue) {
+      let before = [], after = [];
+      try {
+        before = (JSON.parse(e.oldValue || '{}').notices || []).map(n => n.id);
+        after = JSON.parse(e.newValue).notices || [];
+      } catch (err) {}
+      after
+        .filter(n => !before.includes(n.id) && !NoticeDB.isExpired(n))
+        .slice(-3)
+        .forEach((n, i) => setTimeout(() => { NoticeDB.markToasted([n.id]); noticeToast(n); }, i * 600));
+    }
+
+    if (HAS_SESSIONS && e.key === SessionAlerts.KEYS.alerts && e.newValue) {
+      let before = [], after = [];
+      try {
+        before = (JSON.parse(e.oldValue || '{}').alerts || []).map(a => a.id);
+        after = (JSON.parse(e.newValue).alerts || []).map(a => a.id);
+      } catch (err) {}
+      handleNewSessionAlerts(after.filter(id => !before.includes(id)));
+    }
+
+    const keys = Object.values(NoticeDB.KEYS).concat(HAS_SESSIONS ? Object.values(SessionAlerts.KEYS) : [], ['eduvault_sessions_v1']);
+    if (keys.includes(e.key)) refresh();
+  });
+
+  /* ---------- urgent banner (only where <div id="urgentBanner"></div> exists) ---------- */
+  const bannerEl = document.getElementById('urgentBanner');
+
+  function renderBanner() {
+    if (!bannerEl) return;
+    const n = NoticeDB.getActive().find(x => x.category === 'urgent' && !NoticeDB.isBannerDismissed(x.id));
+    if (!n) { bannerEl.innerHTML = ''; return; }
+    bannerEl.innerHTML =
+      '<div class="ub">' +
+        '<span class="ub-ico"><i class="fas fa-triangle-exclamation"></i></span>' +
+        '<div class="ub-text"><strong>Urgent notice</strong><span>' + esc(n.title) + '</span></div>' +
+        '<span class="ub-time">' + esc(fmt.timeAgo(n.createdAt)) + '</span>' +
+        '<a class="ub-btn" href="' + BOARD + '?open=' + n.id + '">Read now</a>' +
+        '<button class="ub-x" data-id="' + n.id + '" aria-label="Dismiss"><i class="fas fa-xmark"></i></button>' +
+      '</div>';
+  }
+  if (bannerEl) {
+    bannerEl.addEventListener('click', e => {
+      const x = e.target.closest('.ub-x');
+      if (!x) return;
+      NoticeDB.dismissBanner(Number(x.dataset.id));
+      renderBanner();
+    });
+  }
+
+  /* ---------- keep everything fresh ---------- */
+  function refresh() {
+    updateBadge();
+    if (open) { renderPanel(); place(); }
+    renderBanner();
+  }
+  window.addEventListener('notices:changed', refresh);
+  window.addEventListener('session-alerts:changed', refresh);
+  window.addEventListener('sessions:changed', refresh);
+  setInterval(refresh, 60000);
+
+  // reminders + "starting now": checked on load and every 30 seconds
+  if (HAS_SESSIONS) {
+    SessionAlerts.tick();
+    setInterval(SessionAlerts.tick, 30000);
+  }
+
+  refresh();
+  setTimeout(() => { toastOnLoad(); sessionToastOnLoad(); }, 900);
+})();
+    </script>
+
+    <script>
+// ==================================================================
+// NOTICE BOARD PAGE LOGIC (was notice-board.js)
+// ==================================================================
+const CAT = NoticeDB.CATEGORIES;
+const fmt = NoticeDB.fmt;
+const esc = NoticeUI.esc;
+
+const grid = document.getElementById('nbGrid');
+const chipsBox = document.getElementById('nbChips');
+const searchInput = document.getElementById('nbSearch');
+const unreadBtn = document.getElementById('nbUnreadOnly');
+const markAllBtn = document.getElementById('nbMarkAll');
+const modal = document.getElementById('noticeModal');
+const modalCard = document.getElementById('nbModalCard');
+
+let activeCat = 'all';
+let unreadOnly = false;
+let firstRender = true;
+
+/* ---------- list ---------- */
+function cardHTML(n, i) {
+  const c = CAT[n.category] || CAT.general;
+  const unread = !NoticeDB.isRead(n.id);
+  const exp = fmt.expiryInfo(n);
+  const a = n.attachment;
+  const attach = a ? `<div class="nb-attach"><i class="fas ${fileIcon(a)}"></i> ${esc(a.name)} <span>${fmt.size(a.size)}</span></div>` : '';
+  return `
+    <article class="nb-card ${unread ? 'unread' : ''}" data-id="${n.id}" tabindex="0" style="--cat:${c.color}; --i:${i}">
+      <div class="nb-card-top">
+        <span class="nb-cat"><i class="fas ${c.icon}"></i> ${c.label}</span>
+        ${unread ? '<span class="nb-new">NEW</span>' : ''}
+      </div>
+      <h3 class="nb-title">${esc(n.title)}</h3>
+      <p class="nb-preview">${esc(n.message)}</p>
+      ${attach}
+      <div class="nb-card-foot">
+        <span title="Posted automatically"><i class="far fa-clock"></i>${esc(fmt.dateTime(n.createdAt))}</span>
+        <span class="nb-exp ${exp.soon ? 'soon' : ''}"><i class="fas fa-hourglass-half"></i>${esc(exp.text)}</span>
+      </div>
+    </article>`;
+}
+
+function fileIcon(a) {
+  if ((a.type || '').startsWith('image/')) return 'fa-file-image';
+  if (a.type === 'application/pdf') return 'fa-file-pdf';
+  return 'fa-file-lines';
+}
+
+function renderChips(active) {
+  const counts = { all: active.length };
+  Object.keys(CAT).forEach(k => { counts[k] = active.filter(n => n.category === k).length; });
+
+  chipsBox.innerHTML =
+    `<button class="nb-chip ${activeCat === 'all' ? 'active' : ''}" data-cat="all"><i class="fas fa-layer-group"></i> All <span class="n">${counts.all}</span></button>` +
+    Object.entries(CAT).map(([k, c]) =>
+      `<button class="nb-chip ${activeCat === k ? 'active' : ''}" data-cat="${k}" style="--cat:${c.color}"><i class="fas ${c.icon}"></i> ${c.label} <span class="n">${counts[k]}</span></button>`
+    ).join('');
+}
+
+function visibleList(active) {
+  const q = searchInput.value.trim().toLowerCase();
+  return active.filter(n =>
+    (activeCat === 'all' || n.category === activeCat) &&
+    (!unreadOnly || !NoticeDB.isRead(n.id)) &&
+    (!q || n.title.toLowerCase().includes(q) || n.message.toLowerCase().includes(q)));
+}
+
+function emptyHTML(totalActive) {
+  if (totalActive === 0) {
+    return `<div class="nb-empty"><div class="nb-empty-icon"><i class="fas fa-clipboard-check"></i></div>
+      <h4>No notices right now</h4><p>New announcements from the administration will appear here.</p></div>`;
+  }
+  return `<div class="nb-empty"><div class="nb-empty-icon"><i class="fas fa-magnifying-glass"></i></div>
+    <h4>No notices match your filters</h4><p>Try another category or clear the search.</p></div>`;
+}
+
+function render() {
+  const active = NoticeDB.getActive();
+  const unread = active.filter(n => !NoticeDB.isRead(n.id)).length;
+
+  document.getElementById('statActive').textContent = active.length;
+  document.getElementById('statUnread').textContent = unread;
+  document.getElementById('statUrgent').textContent = active.filter(n => n.category === 'urgent').length;
+  markAllBtn.disabled = unread === 0;
+
+  renderChips(active);
+  const list = visibleList(active);
+  grid.classList.toggle('no-anim', !firstRender);
+  firstRender = false;
+  grid.innerHTML = list.length ? list.map(cardHTML).join('') : emptyHTML(active.length);
+}
+
+/* ---------- filters ---------- */
+chipsBox.addEventListener('click', e => {
+  const b = e.target.closest('.nb-chip');
+  if (!b) return;
+  activeCat = b.dataset.cat;
+  render();
+});
+searchInput.addEventListener('input', render);
+unreadBtn.addEventListener('click', () => {
+  unreadOnly = !unreadOnly;
+  unreadBtn.classList.toggle('on', unreadOnly);
+  render();
+});
+markAllBtn.addEventListener('click', () => {
+  NoticeDB.markAllRead();
+  NoticeUI.toast('All notices marked as read');
+});
+
+/* ---------- detail modal ---------- */
+function attachmentEl(a) {
+  const wrap = document.createElement('div');
+  const isImg = (a.type || '').startsWith('image/');
+
+  if (isImg && a.dataUrl) {
+    const img = document.createElement('img');
+    img.className = 'nb-file-img';
+    img.src = a.dataUrl;
+    img.alt = a.name;
+    wrap.appendChild(img);
+  }
+
+  const row = document.createElement('div');
+  row.className = 'nb-file';
+  row.innerHTML = `<span class="ico"><i class="fas ${fileIcon(a)}"></i></span><div class="info"><strong></strong><small></small></div>`;
+  row.querySelector('strong').textContent = a.name;
+  row.querySelector('small').textContent = fmt.size(a.size);
+
+  let btn;
+  if (a.dataUrl) {
+    btn = document.createElement('a');
+    btn.href = a.dataUrl;
+    btn.download = a.name;
+  } else {
+    btn = document.createElement('button');
+    btn.type = 'button';
+    btn.addEventListener('click', () =>
+      NoticeUI.toast('Demo only: real downloads work once the backend stores uploaded files.', 'info'));
+  }
+  btn.className = 'nb-btn primary';
+  btn.innerHTML = '<i class="fas fa-download"></i> Download';
+  row.appendChild(btn);
+  wrap.appendChild(row);
+  return wrap;
+}
+
+function openDetail(id) {
+  const n = NoticeDB.get(id);
+  if (!n || NoticeDB.isExpired(n)) {
+    NoticeUI.toast('That notice is no longer available.', 'info');
+    return;
+  }
+  const c = CAT[n.category] || CAT.general;
+  const exp = fmt.expiryInfo(n);
+
+  modalCard.style.setProperty('--cat', c.color);
+  document.getElementById('mCat').style.setProperty('--cat', c.color);
+  document.getElementById('mCat').innerHTML = `<i class="fas ${c.icon}"></i> ${c.label}`;
+  document.getElementById('mTitle').textContent = n.title;
+  document.getElementById('mMeta').innerHTML =
+    `<span><i class="far fa-clock"></i>Posted ${esc(fmt.dateTime(n.createdAt))}</span>` +
+    `<span><i class="fas fa-user-shield"></i>${esc(n.author)}</span>` +
+    `<span class="${exp.soon ? 'soon' : ''}"><i class="fas fa-hourglass-half"></i>${esc(exp.text)}</span>` +
+    (n.editedAt ? `<span><i class="fas fa-pen"></i>Edited ${esc(fmt.timeAgo(n.editedAt))}</span>` : '');
+  document.getElementById('mBody').textContent = n.message;
+
+  const attach = document.getElementById('mAttach');
+  attach.innerHTML = '';
+  if (n.attachment) attach.appendChild(attachmentEl(n.attachment));
+
+  modal.classList.remove('nb-hidden');
+  NoticeDB.markRead(n.id);
+}
+
+function closeDetail() { modal.classList.add('nb-hidden'); }
+
+grid.addEventListener('click', e => {
+  const card = e.target.closest('.nb-card');
+  if (card) openDetail(Number(card.dataset.id));
+});
+grid.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const card = e.target.closest('.nb-card');
+  if (card) { e.preventDefault(); openDetail(Number(card.dataset.id)); }
+});
+document.getElementById('mClose').addEventListener('click', closeDetail);
+modal.addEventListener('click', e => { if (e.target === modal) closeDetail(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
+
+/* ---------- start ---------- */
+NoticeDB.onChange(render);
+setInterval(render, 60000);   // keeps "x min ago" and expiry fresh
+render();
+
+const openParam = new URLSearchParams(window.location.search).get('open');
+if (openParam) {
+  openDetail(Number(openParam));
+  window.history.replaceState(null, '', window.location.pathname);
+}
+    </script>
+</body>
+</html>
